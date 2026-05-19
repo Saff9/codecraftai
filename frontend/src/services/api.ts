@@ -4,7 +4,7 @@ import { useMemoryStore } from "../store/memoryStore";
 import { useAuthStore } from "../store/authStore";
 import { Model, GenerationResult, MemoryFact } from "../types";
 
-const API_BASE = "http://localhost:8000/api";
+const API_BASE = "/api";
 
 function getAuthHeaders() {
   const email = useAuthStore.getState().userEmail || "";
