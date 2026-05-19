@@ -38,22 +38,28 @@ export async function generate(params: {
   prompt: string;
   image?: string;
   generation_type?: string;
+  streaming?: boolean;
+  onChunk?: (chunk: string) => void;
 }): Promise<GenerationResult> {
   const { apiKeys, customProviders } = useSettingsStore.getState();
   const active_skills = useSkillsStore.getState().getActiveSkillIds();
   const long_term_memories = useMemoryStore.getState().facts;
 
+  const { streaming, onChunk, ...restParams } = params;
+
   const res = await fetch(`${API_BASE}/generate`, {
     method: "POST",
     headers: getAuthHeaders(),
     body: JSON.stringify({
-      ...params,
+      ...restParams,
+      streaming,
       api_keys: apiKeys,
       custom_providers: customProviders,
       active_skills,
       long_term_memories,
     }),
   });
+
   if (!res.ok) {
     let errDetail = "Generation failed";
     try {
@@ -64,6 +70,60 @@ export async function generate(params: {
     }
     throw new Error(errDetail);
   }
+
+  if (streaming && onChunk && res.body) {
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let accumulatedText = "";
+    let cost = 0;
+    let usage: any = undefined;
+    let buffer = "";
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const cleanLine = line.trim();
+          if (cleanLine.startsWith("data: ")) {
+            const jsonStr = cleanLine.slice(6).trim();
+            if (!jsonStr) continue;
+            try {
+              const data = JSON.parse(jsonStr);
+              if (data.error) {
+                throw new Error(data.error);
+              }
+              if (data.chunk) {
+                accumulatedText += data.chunk;
+                onChunk(accumulatedText);
+              }
+              if (data.done) {
+                cost = data.cost || 0;
+                usage = data.usage;
+              }
+            } catch (err) {
+              console.error("Failed to parse SSE JSON line:", err);
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    return {
+      type: "text",
+      content: accumulatedText,
+      cost,
+      usage,
+    };
+  }
+
   return res.json();
 }
 

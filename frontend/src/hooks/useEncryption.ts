@@ -26,7 +26,7 @@ export function useEncryption() {
     if (!key) throw new Error("Store is locked. Please enter your passphrase.");
     const { iv, ciphertext } = await encryptData(text, key);
     return {
-      iv: bufferToBase64(iv.buffer),
+      iv: bufferToBase64(iv.buffer as ArrayBuffer),
       ciphertext: bufferToBase64(ciphertext)
     };
   }, [key]);
