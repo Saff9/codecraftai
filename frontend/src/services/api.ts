@@ -92,22 +92,27 @@ export async function generate(params: {
           const cleanLine = line.trim();
           if (cleanLine.startsWith("data: ")) {
             const jsonStr = cleanLine.slice(6).trim();
-            if (!jsonStr) continue;
+            if (!jsonStr || jsonStr === "[DONE]") continue;
+
+            let data: any;
             try {
-              const data = JSON.parse(jsonStr);
-              if (data.error) {
-                throw new Error(data.error);
-              }
-              if (data.chunk) {
-                accumulatedText += data.chunk;
-                onChunk(accumulatedText);
-              }
-              if (data.done) {
-                cost = data.cost || 0;
-                usage = data.usage;
-              }
-            } catch (err) {
-              console.error("Failed to parse SSE JSON line:", err);
+              data = JSON.parse(jsonStr);
+            } catch {
+              // malformed SSE line — skip
+              continue;
+            }
+
+            if (data.error) {
+              // propagate provider error to the user
+              throw new Error(data.error);
+            }
+            if (data.chunk) {
+              accumulatedText += data.chunk;
+              onChunk(accumulatedText);
+            }
+            if (data.done) {
+              cost = data.cost || 0;
+              usage = data.usage;
             }
           }
         }
