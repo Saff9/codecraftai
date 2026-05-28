@@ -442,7 +442,12 @@ export default function ChatThread() {
                   : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 shadow-xs"
               }`}
             >
-              <img src={m.logo_url} alt={m.provider} className="w-3.5 h-3.5 sm:w-4 sm:h-4 object-contain" />
+              <img 
+                src={m.logo_url} 
+                alt={m.provider} 
+                className="w-3.5 h-3.5 sm:w-4 sm:h-4 object-contain"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
               <span className="font-mono">{m.display_name}</span>
             </button>
           ))}
@@ -485,73 +490,138 @@ export default function ChatThread() {
               </div>
 
               <div className={`max-w-[95%] sm:max-w-[85%] flex flex-col gap-1`}>
-                {/* Bubble */}
-                <div className={`rounded-2xl px-4 py-3 shadow-sm transition-all duration-200 ${
+                {/* Bubble card */}
+                <div className={`rounded-2xl shadow-sm transition-all duration-200 overflow-hidden ${
                   msg.role === "user"
-                    ? "bg-blue-600 text-white rounded-tr-none"
+                    ? "bg-blue-600 text-white rounded-tr-none px-4 py-3"
                     : "bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-tl-none border border-gray-100 dark:border-gray-800"
                 }`}>
-                  {msg.error ? (
-                    <div className="bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-xl p-3 text-red-900 dark:text-red-200 text-xs flex flex-col gap-3">
-                      <div className="flex items-center gap-2 font-bold">
-                        <AlertTriangle size={16} className="text-red-500 shrink-0" />
-                        <span>Generation Error</span>
-                      </div>
-                      <p className="font-mono bg-red-100/50 dark:bg-red-900/50 p-2 rounded-lg text-[11px] leading-relaxed break-words">{msg.error}</p>
-                      <button
-                        onClick={() => handleRetry(msg)}
-                        className="flex items-center justify-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition text-xs w-fit active:scale-95 cursor-pointer"
-                      >
-                        <RefreshCw size={12} />
-                        <span>Retry</span>
-                      </button>
-                    </div>
+                  {msg.role === "user" ? (
+                    <MarkdownContent content={msg.content} onOpenArtifact={(art) => setActiveArtifact(art)} />
                   ) : (
-                    <>
-                      <MarkdownContent content={msg.content} onOpenArtifact={(art) => setActiveArtifact(art)} />
-                      {msg.type === "image" && msg.mediaUrl && (
-                        <div className="mt-3 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800 shadow-lg">
-                          <img src={msg.mediaUrl} alt="Generated" className="w-full h-auto object-cover max-h-[28rem]" />
+                    <div className="flex flex-col">
+                      {/* Message Body */}
+                      <div className="px-4 py-3.5">
+                        {msg.error ? (
+                          <div className="bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-xl p-3 text-red-900 dark:text-red-200 text-xs flex flex-col gap-3">
+                            <div className="flex items-center gap-2 font-bold">
+                              <AlertTriangle size={16} className="text-red-500 shrink-0" />
+                              <span>Generation Error</span>
+                            </div>
+                            <p className="font-mono bg-red-100/50 dark:bg-red-900/50 p-2 rounded-lg text-[11px] leading-relaxed break-words">{msg.error}</p>
+                            <button
+                              onClick={() => handleRetry(msg)}
+                              className="flex items-center justify-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition text-xs w-fit active:scale-95 cursor-pointer"
+                            >
+                              <RefreshCw size={12} />
+                              <span>Retry</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <MarkdownContent content={msg.content} onOpenArtifact={(art) => setActiveArtifact(art)} />
+                            {msg.type === "image" && msg.mediaUrl && (
+                              <div className="mt-3 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800 shadow-lg">
+                                <img src={msg.mediaUrl} alt="Generated" className="w-full h-auto object-cover max-h-[28rem]" />
+                              </div>
+                            )}
+                            {msg.type === "video" && msg.mediaUrl && (
+                              <MediaPlayer url={msg.mediaUrl} />
+                            )}
+                          </>
+                        )}
+                      </div>
+
+                      {/* Premium Footer Bar */}
+                      {!msg.error && (
+                        <div className="flex items-center justify-between px-4 py-2 bg-gray-50/50 dark:bg-gray-950/20 border-t border-gray-100 dark:border-gray-800/80 text-[11px] text-gray-500 dark:text-gray-400">
+                          {/* Model badge & Cost */}
+                          <div className="flex items-center gap-1.5 overflow-hidden">
+                            {msg.model && (
+                              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-mono text-[10px] truncate max-w-[120px] sm:max-w-[180px]" title={msg.model}>
+                                <Bot size={11} className="text-blue-500 shrink-0" />
+                                <span className="truncate">{msg.model}</span>
+                              </span>
+                            )}
+                            <span className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold border ${
+                              msg.cost === undefined || msg.cost === 0
+                                ? "bg-green-50 dark:bg-green-950/40 text-green-600 dark:text-green-400 border-green-100/30 dark:border-green-900/30"
+                                : "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border-blue-100/30 dark:border-blue-900/30"
+                            }`}>
+                              {msg.cost === undefined || msg.cost === 0 ? "Free" : `$${msg.cost.toFixed(6)}`}
+                            </span>
+                          </div>
+
+                          {/* Action Buttons */}
+                          <div className="flex items-center gap-1 shrink-0">
+                            {/* Copy button */}
+                            <button
+                              onClick={() => handleCopy(msg.id, msg.content)}
+                              title="Copy response"
+                              className="p-1 rounded hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-400"
+                            >
+                              {copiedId === msg.id ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
+                            </button>
+
+                            <div className="w-[1px] h-3 bg-gray-200 dark:bg-gray-800 mx-0.5" />
+
+                            {/* Export buttons */}
+                            <button
+                              onClick={() => handleExport(msg, "pdf")}
+                              title="Export as PDF"
+                              className="p-1 rounded hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-400"
+                            >
+                              <Printer size={13} />
+                            </button>
+
+                            <button
+                              onClick={() => handleExport(msg, "md")}
+                              title="Export as Markdown (.md)"
+                              className="p-1 rounded hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-400"
+                            >
+                              <FileText size={13} />
+                            </button>
+
+                            <button
+                              onClick={() => handleExport(msg, "txt")}
+                              title="Export as Text (.txt)"
+                              className="p-1 rounded hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-400"
+                            >
+                              <FileText size={13} className="opacity-60" />
+                            </button>
+
+                            <button
+                              onClick={() => handleExport(msg, "html")}
+                              title="Export as HTML"
+                              className="p-1 rounded hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-400"
+                            >
+                              <Globe size={13} />
+                            </button>
+
+                            {msg.mediaUrl && (
+                              <>
+                                <div className="w-[1px] h-3 bg-gray-200 dark:bg-gray-800 mx-0.5" />
+                                <DownloadButton url={msg.mediaUrl} filename={`media_${msg.timestamp}.${msg.type === "image" ? "png" : "mp4"}`} />
+                              </>
+                            )}
+                          </div>
                         </div>
                       )}
-                      {msg.type === "video" && msg.mediaUrl && (
-                        <MediaPlayer url={msg.mediaUrl} />
-                      )}
-                    </>
+                    </div>
                   )}
                 </div>
 
-                {/* Hover Action Toolbar — only visible on group hover */}
-                {!msg.error && (
-                  <div className={`flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 ${
-                    msg.role === "user" ? "flex-row-reverse" : "flex-row"
-                  }`}>
-                    {/* Copy */}
+                {/* User action bar (only on hover) */}
+                {msg.role === "user" && !msg.error && (
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex-row-reverse">
                     <button
                       onClick={() => handleCopy(msg.id, msg.content)}
                       title="Copy message"
-                      className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer"
+                      className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-medium text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-850 transition cursor-pointer"
                     >
                       {copiedId === msg.id ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
                       <span>{copiedId === msg.id ? "Copied" : "Copy"}</span>
                     </button>
-
-                    {/* Export dropdown buttons */}
-                    <div className="flex items-center gap-0.5 border-l border-gray-200 dark:border-gray-700 ml-1 pl-1">
-                      <button onClick={() => handleExport(msg, "pdf")} title="Export PDF" className="px-2 py-1 rounded-lg text-[11px] font-medium text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer">PDF</button>
-                      <button onClick={() => handleExport(msg, "md")} title="Export Markdown" className="px-2 py-1 rounded-lg text-[11px] font-medium text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer">MD</button>
-                      <button onClick={() => handleExport(msg, "txt")} title="Export TXT" className="px-2 py-1 rounded-lg text-[11px] font-medium text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer">TXT</button>
-                      <button onClick={() => handleExport(msg, "html")} title="Export HTML" className="px-2 py-1 rounded-lg text-[11px] font-medium text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer">HTML</button>
-                    </div>
-
-                    {/* Model + Cost metadata */}
-                    {msg.role === "assistant" && (
-                      <div className="flex items-center gap-2 border-l border-gray-200 dark:border-gray-700 ml-1 pl-2 text-[10px] text-gray-400 font-mono">
-                        {msg.model && <span>{msg.model}</span>}
-                        {msg.cost !== undefined && msg.cost > 0 && <span className="text-blue-500">${msg.cost.toFixed(6)}</span>}
-                        {msg.mediaUrl && <DownloadButton url={msg.mediaUrl} filename={`media_${msg.timestamp}.${msg.type === "image" ? "png" : "mp4"}`} />}
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -607,8 +677,8 @@ export default function ChatThread() {
             {/* Modal Body */}
             <div className="flex-1 overflow-y-auto p-6 bg-white dark:bg-gray-900 font-sans leading-relaxed select-all">
               {activeArtifact.type === "markdown" ? (
-                <div className="max-w-4xl mx-auto prose dark:prose-invert whitespace-pre-wrap text-sm text-gray-800 dark:text-gray-200 leading-relaxed font-sans">
-                  {activeArtifact.content}
+                <div className="max-w-4xl mx-auto prose dark:prose-invert text-sm text-gray-800 dark:text-gray-200 leading-relaxed font-sans space-y-1">
+                  {parseMarkdownToReact(activeArtifact.content)}
                 </div>
               ) : (
                 <pre className="p-6 bg-gray-950 text-gray-100 rounded-2xl overflow-x-auto font-mono text-xs shadow-inner leading-normal border border-gray-800">
@@ -621,6 +691,164 @@ export default function ChatThread() {
       )}
     </div>
   );
+}
+
+// Helper to parse inline markdown styles (bold, italic, inline code, links)
+function renderInlineStyles(text: string): React.ReactNode {
+  const parts: { type: "text" | "code" | "bold" | "italic" | "link"; content: string; href?: string }[] = [];
+  let remaining = text;
+  
+  while (remaining.length > 0) {
+    const codeIdx = remaining.indexOf("`");
+    const boldIdx = remaining.indexOf("**");
+    const italicIdx = remaining.indexOf("*");
+    const linkIdx = remaining.indexOf("[");
+    
+    const indices = [
+      { type: "code", index: codeIdx },
+      { type: "bold", index: boldIdx },
+      { type: "italic", index: italicIdx },
+      { type: "link", index: linkIdx }
+    ].filter(x => x.index !== -1).sort((a, b) => a.index - b.index);
+    
+    if (indices.length === 0) {
+      parts.push({ type: "text", content: remaining });
+      break;
+    }
+    
+    const first = indices[0];
+    if (first.index > 0) {
+      parts.push({ type: "text", content: remaining.slice(0, first.index) });
+      remaining = remaining.slice(first.index);
+    }
+    
+    if (first.type === "code") {
+      const closing = remaining.indexOf("`", 1);
+      if (closing !== -1) {
+        parts.push({ type: "code", content: remaining.slice(1, closing) });
+        remaining = remaining.slice(closing + 1);
+      } else {
+        parts.push({ type: "text", content: "`" });
+        remaining = remaining.slice(1);
+      }
+    } else if (first.type === "bold") {
+      const closing = remaining.indexOf("**", 2);
+      if (closing !== -1) {
+        parts.push({ type: "bold", content: remaining.slice(2, closing) });
+        remaining = remaining.slice(closing + 2);
+      } else {
+        parts.push({ type: "text", content: "**" });
+        remaining = remaining.slice(2);
+      }
+    } else if (first.type === "italic") {
+      const closing = remaining.indexOf("*", 1);
+      if (closing !== -1) {
+        parts.push({ type: "italic", content: remaining.slice(1, closing) });
+        remaining = remaining.slice(closing + 1);
+      } else {
+        parts.push({ type: "text", content: "*" });
+        remaining = remaining.slice(1);
+      }
+    } else if (first.type === "link") {
+      const closingBracket = remaining.indexOf("]");
+      if (closingBracket !== -1) {
+        const openParen = remaining.indexOf("(", closingBracket);
+        const closeParen = remaining.indexOf(")", closingBracket);
+        if (openParen === closingBracket + 1 && closeParen !== -1) {
+          const linkText = remaining.slice(1, closingBracket);
+          const linkUrl = remaining.slice(openParen + 1, closeParen);
+          parts.push({ type: "link", content: linkText, href: linkUrl });
+          remaining = remaining.slice(closeParen + 1);
+          continue;
+        }
+      }
+      parts.push({ type: "text", content: "[" });
+      remaining = remaining.slice(1);
+    }
+  }
+  
+  return parts.map((part, idx) => {
+    switch (part.type) {
+      case "code":
+        return <code key={idx} className="bg-gray-100 dark:bg-gray-800 text-red-650 dark:text-red-400 px-1 py-0.5 rounded font-mono text-[11px] font-semibold">{part.content}</code>;
+      case "bold":
+        return <strong key={idx} className="font-bold text-gray-900 dark:text-white">{part.content}</strong>;
+      case "italic":
+        return <em key={idx} className="italic text-gray-700 dark:text-gray-300">{part.content}</em>;
+      case "link":
+        return (
+          <a key={idx} href={part.href} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline font-semibold">
+            {part.content}
+          </a>
+        );
+      default:
+        return part.content;
+    }
+  });
+}
+
+// Parses multiline markdown block text into beautiful react lists, headings, and quotes
+function parseMarkdownToReact(text: string): React.ReactNode {
+  const lines = text.split("\n");
+  
+  return lines.map((line, lineIdx) => {
+    // 1. Check for headings
+    const headingMatch = line.match(/^(#{1,6})\s+(.*)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const content = renderInlineStyles(headingMatch[2]);
+      const className = 
+        level === 1 ? "text-lg sm:text-xl font-bold text-gray-950 dark:text-white mt-4 mb-2 font-mono" :
+        level === 2 ? "text-base sm:text-lg font-bold text-gray-900 dark:text-gray-100 mt-3 mb-2 font-mono" :
+        level === 3 ? "text-sm sm:text-base font-bold text-gray-900 dark:text-gray-250 mt-2.5 mb-1.5 font-mono" :
+        "text-xs sm:text-sm font-bold text-gray-850 dark:text-gray-350 mt-2 mb-1 font-mono";
+      const Tag = `h${level}` as any;
+      return <Tag key={lineIdx} className={className}>{content}</Tag>;
+    }
+    
+    // 2. Check for bullet list items
+    const listMatch = line.match(/^(\*|-)\s+(.*)$/);
+    if (listMatch) {
+      const content = renderInlineStyles(listMatch[2]);
+      return (
+        <ul key={lineIdx} className="list-disc pl-4 my-1 space-y-0.5">
+          <li className="text-gray-800 dark:text-gray-200">{content}</li>
+        </ul>
+      );
+    }
+    
+    // 3. Check for numbered list items
+    const numListMatch = line.match(/^(\d+)\.\s+(.*)$/);
+    if (numListMatch) {
+      const content = renderInlineStyles(numListMatch[2]);
+      return (
+        <ol key={lineIdx} className="list-decimal pl-4 my-1 space-y-0.5">
+          <li className="text-gray-800 dark:text-gray-200">{content}</li>
+        </ol>
+      );
+    }
+    
+    // 4. Check for blockquotes
+    if (line.startsWith("> ")) {
+      const content = renderInlineStyles(line.slice(2));
+      return (
+        <blockquote key={lineIdx} className="border-l-4 border-gray-300 dark:border-gray-700 pl-3 py-0.5 my-1.5 italic text-gray-500 dark:text-gray-400 bg-gray-50/50 dark:bg-gray-950/10 rounded-r-md">
+          {content}
+        </blockquote>
+      );
+    }
+    
+    // 5. Default paragraph
+    if (line.trim() === "") {
+      return <div key={lineIdx} className="h-1.5" />;
+    }
+    
+    return (
+      <p key={lineIdx} className="my-1 leading-relaxed text-gray-800 dark:text-gray-200 font-sans">
+        {renderInlineStyles(line)}
+      </p>
+    );
+  });
 }
 
 function MarkdownContent({ content, onOpenArtifact }: { content: string; onOpenArtifact: (artifact: ArtifactData) => void }) {
@@ -730,8 +958,8 @@ function MarkdownContent({ content, onOpenArtifact }: { content: string; onOpenA
           );
         }
         return (
-          <div key={idx} className="whitespace-pre-wrap leading-relaxed font-sans">
-            {block.content}
+          <div key={idx} className="space-y-1 font-sans">
+            {parseMarkdownToReact(block.content)}
           </div>
         );
       })}

@@ -128,27 +128,32 @@ async def _refresh_models_cache(api_keys: Optional[Dict[str, str]] = None,
     global _models_cache, _models_cache_time
 
     provs = get_providers_map(api_keys, custom_provs)
-    
-    # Start with the static cache as baseline (non-OpenRouter providers)
-    base = [m for m in MODELS_CACHE if m.provider != "openrouter"]
-    seen_ids = {m.model_id for m in base}
-    result: List[ModelInfo] = list(base)
 
-    # Fetch live from all providers that support list_models
-    for name, provider in provs.items():
+    # Fetch all providers concurrently
+    async def fetch_provider(name: str, provider) -> List[ModelInfo]:
         if hasattr(provider, "list_models"):
             try:
-                live = await provider.list_models()
-                for m in live:
-                    if m.model_id not in seen_ids:
-                        result.append(m)
-                        seen_ids.add(m.model_id)
+                return await provider.list_models()
             except Exception as e:
                 logger.warning(f"Model list failed for {name}: {e}")
+        return []
+
+    tasks = [(name, provider) for name, provider in provs.items()]
+    results_list = await asyncio.gather(*[fetch_provider(n, p) for n, p in tasks], return_exceptions=True)
+
+    seen_ids: set = set()
+    result: List[ModelInfo] = []
+
+    for models in results_list:
+        if isinstance(models, list):
+            for m in models:
+                if m.model_id not in seen_ids:
+                    result.append(m)
+                    seen_ids.add(m.model_id)
 
     _models_cache = result
     _models_cache_time = time.time()
-    logger.info(f"Model cache refreshed: {len(_models_cache)} total models")
+    logger.info(f"Model cache refreshed concurrently: {len(_models_cache)} total models")
     return result
 
 class ModelsRequest(BaseModel):
