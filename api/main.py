@@ -7,6 +7,7 @@ import json
 import os
 import logging
 import asyncio
+import time
 
 from api.models_cache import MODELS_CACHE, ModelInfo
 from api.providers.groq import GroqProvider
@@ -27,7 +28,12 @@ from api.config import CUSTOM_PROVIDERS, GROQ_API_KEY, CEREBRAS_API_KEY, NVIDIA_
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("codecraft.api")
 
-app = FastAPI(title="Code Craft Enterprise API", version="1.0.4")
+app = FastAPI(title="Code Craft Enterprise API", version="1.0.5")
+
+# In-memory model cache with 10-minute TTL
+_models_cache: List[ModelInfo] = []
+_models_cache_time: float = 0.0
+MODELS_CACHE_TTL = 600  # 10 minutes
 
 app.add_middleware(
     CORSMiddleware,
@@ -114,18 +120,36 @@ def get_providers_map(api_keys: Optional[Dict[str, str]] = None, custom_provs: O
 
 @app.on_event("startup")
 async def load_models():
-    global MODELS_CACHE
-    provs = get_providers_map()
+    """Pre-warm the model cache on startup."""
+    await _refresh_models_cache()
+
+async def _refresh_models_cache(api_keys: Optional[Dict[str, str]] = None,
+                                 custom_provs: Optional[List[Dict[str, Any]]] = None) -> List[ModelInfo]:
+    global _models_cache, _models_cache_time
+
+    provs = get_providers_map(api_keys, custom_provs)
+    
+    # Start with the static cache as baseline (non-OpenRouter providers)
+    base = [m for m in MODELS_CACHE if m.provider != "openrouter"]
+    seen_ids = {m.model_id for m in base}
+    result: List[ModelInfo] = list(base)
+
+    # Fetch live from all providers that support list_models
     for name, provider in provs.items():
         if hasattr(provider, "list_models"):
             try:
-                models = await provider.list_models()
-                existing_ids = {m.model_id for m in MODELS_CACHE}
-                for m in models:
-                    if m.model_id not in existing_ids:
-                        MODELS_CACHE.append(m)
+                live = await provider.list_models()
+                for m in live:
+                    if m.model_id not in seen_ids:
+                        result.append(m)
+                        seen_ids.add(m.model_id)
             except Exception as e:
-                logger.warning(f"Failed to load startup models for {name}: {str(e)}")
+                logger.warning(f"Model list failed for {name}: {e}")
+
+    _models_cache = result
+    _models_cache_time = time.time()
+    logger.info(f"Model cache refreshed: {len(_models_cache)} total models")
+    return result
 
 class ModelsRequest(BaseModel):
     api_keys: Optional[Dict[str, str]] = None
@@ -157,33 +181,26 @@ class MemoryExtractRequest(BaseModel):
 
 @app.post("/api/models")
 async def get_models_post(req: ModelsRequest, email: str = Depends(verify_user_email)):
-    provs = get_providers_map(req.api_keys, req.custom_providers)
-    cache = list(MODELS_CACHE)
-    existing_ids = {m.model_id for m in cache}
+    global _models_cache, _models_cache_time
+    age = time.time() - _models_cache_time
+    if age > MODELS_CACHE_TTL or not _models_cache or req.api_keys:
+        await _refresh_models_cache(req.api_keys, req.custom_providers)
+    cache = _models_cache
 
-    for name, provider in provs.items():
-        if hasattr(provider, "list_models"):
-            try:
-                models = await provider.list_models()
-                for m in models:
-                    if m.model_id not in existing_ids:
-                        cache.append(m)
-                        existing_ids.add(m.model_id)
-            except Exception as e:
-                logger.warning(f"Failed to list models for {name}: {str(e)}")
-        elif name not in ["groq", "cerebras", "nvidia", "openrouter", "gemini", "huggingface", "deepseek", "alibaba"] and name not in PROVIDER_CONFIGS:
-            cache.append(ModelInfo(
-                provider=name,
-                model_id="custom-model",
-                display_name=f"{name.upper()} Custom Model",
-                type="text",
-                logo_url="/logos/custom.svg",
-                context_length=8192,
-                cost_per_1k_tokens=0.0,
-                is_free=False,
-                capabilities=["Custom REST Endpoint"],
-                tier="Custom Endpoint"
-            ))
+    # Add custom providers
+    if req.custom_providers:
+        seen = {m.model_id for m in cache}
+        for cp in req.custom_providers:
+            name = cp.get("name", "").lower()
+            cid = f"custom-{name}"
+            if name and cid not in seen:
+                cache = list(cache) + [ModelInfo(
+                    provider=name, model_id=cid,
+                    display_name=f"{name.upper()} Custom",
+                    type="text", logo_url="/logos/custom.svg",
+                    context_length=8192, cost_per_1k_tokens=0.0,
+                    is_free=False, capabilities=["Custom REST"], tier="Custom"
+                )]
 
     if req.type:
         return [m.dict() for m in cache if m.type == req.type]
@@ -191,9 +208,20 @@ async def get_models_post(req: ModelsRequest, email: str = Depends(verify_user_e
 
 @app.get("/api/models")
 async def get_models_get(type: Optional[str] = None, email: str = Depends(verify_user_email)):
+    global _models_cache, _models_cache_time
+    age = time.time() - _models_cache_time
+    if age > MODELS_CACHE_TTL or not _models_cache:
+        await _refresh_models_cache()
+    cache = _models_cache
     if type:
-        return [m.dict() for m in MODELS_CACHE if m.type == type]
-    return [m.dict() for m in MODELS_CACHE]
+        return [m.dict() for m in cache if m.type == type]
+    return [m.dict() for m in cache]
+
+@app.get("/api/models/refresh")
+async def force_refresh_models(email: str = Depends(verify_user_email)):
+    """Force a live re-fetch from all providers."""
+    result = await _refresh_models_cache()
+    return {"refreshed": True, "count": len(result)}
 
 @app.post("/api/skills/execute")
 async def execute_skills_endpoint(req: SkillsRequest, email: str = Depends(verify_user_email)):
