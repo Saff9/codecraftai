@@ -52,32 +52,50 @@ export default function ChatThread() {
   }, []);
 
   useEffect(() => {
-    const loadAndDecrypt = async () => {
+    let isMounted = true;
+    
+    const loadMessages = async () => {
       if (!activeThread) {
-        setMessages([]);
+        if (isMounted) setMessages([]);
         return;
       }
-      const decrypted = await Promise.all(
-        activeThread.messages.map(async (m) => {
-          if (m.content.startsWith("ENC:")) {
-            const parts = m.content.slice(4).split(":");
-            if (parts.length === 2) {
-              try {
-                const plain = await decrypt(parts[0], parts[1]);
-                return { ...m, content: plain };
-              } catch {
-                return { ...m, content: "🔒 [Encrypted Message - Failed to decrypt]" };
+
+      if (isLocked) {
+        if (isMounted) setMessages(activeThread.messages);
+        return;
+      }
+
+      const decryptedMessages = await Promise.all(
+        activeThread.messages.map(async (msg) => {
+          if (msg.content.startsWith("ENC:")) {
+            try {
+              const parts = msg.content.split(":");
+              if (parts.length === 3) {
+                const iv = parts[1];
+                const ciphertext = parts[2];
+                const decryptedContent = await decrypt(iv, ciphertext);
+                return { ...msg, content: decryptedContent };
               }
+            } catch (err) {
+              console.error("Failed to decrypt message:", err);
+              return { ...msg, content: "🔒 [Encrypted Message - Failed to decrypt with current passphrase]" };
             }
           }
-          return m;
+          return msg;
         })
       );
-      setMessages(decrypted);
-    };
-    loadAndDecrypt();
-  }, [activeThread, decrypt]);
 
+      if (isMounted) {
+        setMessages(decryptedMessages);
+      }
+    };
+
+    loadMessages();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeThread, isLocked, decrypt]);
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
