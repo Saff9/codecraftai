@@ -69,16 +69,18 @@ export default function ChatThread() {
         activeThread.messages.map(async (msg) => {
           if (msg.content.startsWith("ENC:")) {
             try {
-              const parts = msg.content.split(":");
-              if (parts.length === 3) {
-                const iv = parts[1];
-                const ciphertext = parts[2];
+              // Format: ENC:<iv>:<ciphertext> — iv is fixed length, rest is ciphertext
+              const withoutPrefix = msg.content.slice(4); // remove "ENC:"
+              const colonIdx = withoutPrefix.indexOf(":");
+              if (colonIdx !== -1) {
+                const iv = withoutPrefix.slice(0, colonIdx);
+                const ciphertext = withoutPrefix.slice(colonIdx + 1);
                 const decryptedContent = await decrypt(iv, ciphertext);
                 return { ...msg, content: decryptedContent };
               }
             } catch (err) {
               console.error("Failed to decrypt message:", err);
-              return { ...msg, content: "🔒 [Encrypted Message - Failed to decrypt with current passphrase]" };
+              return { ...msg, content: "🔒 [Encrypted — unlock with your passphrase]" };
             }
           }
           return msg;
@@ -475,70 +477,82 @@ export default function ChatThread() {
           </div>
         ) : (
           messages.map((msg) => (
-            <div key={msg.id} className={`flex gap-2 sm:gap-3 animate-fade-in ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
-              <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center shrink-0 shadow-md ${
+            <div key={msg.id} className={`group flex gap-2 sm:gap-3 animate-fade-in ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
+              <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center shrink-0 shadow-sm mt-1 ${
                 msg.role === "user" ? "bg-gradient-to-tr from-blue-600 to-indigo-600 text-white" : "bg-white dark:bg-gray-800 text-blue-500 border border-gray-100 dark:border-gray-700"
               }`}>
                 {msg.role === "user" ? <User size={14} /> : <Bot size={14} />}
               </div>
 
-              <div className={`max-w-[95%] sm:max-w-[85%] rounded-2xl p-3.5 sm:p-4.5 shadow-sm transition duration-200 ${
-                msg.role === "user" 
-                  ? "bg-blue-600 text-white rounded-tr-none shadow-blue-500/10" 
-                  : "bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-tl-none border border-gray-100 dark:border-gray-800"
-              }`}>
-                {msg.error ? (
-                  <div className="p-3 sm:p-4 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-xl text-red-900 dark:text-red-200 text-xs flex flex-col gap-3 shadow-inner">
-                    <div className="flex items-center gap-2 font-bold">
-                      <AlertTriangle size={18} className="text-red-500 shrink-0" />
-                      <span>Generation Error</span>
-                    </div>
-                    <p className="font-mono bg-red-100/50 dark:bg-red-900/50 p-2 sm:p-2.5 rounded-lg text-[11px] leading-relaxed break-words">{msg.error}</p>
-                    <button
-                      onClick={() => handleRetry(msg)}
-                      className="flex items-center justify-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition shadow-md w-fit active:scale-95 cursor-pointer"
-                    >
-                      <RefreshCw size={14} className="animate-spin" style={{ animationDuration: '4s' }} />
-                      <span>Retry Generation</span>
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <MarkdownContent content={msg.content} onOpenArtifact={(art) => setActiveArtifact(art)} />
-
-                    {msg.type === "image" && msg.mediaUrl && (
-                      <div className="mt-3 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800 shadow-lg">
-                        <img src={msg.mediaUrl} alt="Generated AI" className="w-full h-auto object-cover max-h-[28rem]" />
+              <div className={`max-w-[95%] sm:max-w-[85%] flex flex-col gap-1`}>
+                {/* Bubble */}
+                <div className={`rounded-2xl px-4 py-3 shadow-sm transition-all duration-200 ${
+                  msg.role === "user"
+                    ? "bg-blue-600 text-white rounded-tr-none"
+                    : "bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-tl-none border border-gray-100 dark:border-gray-800"
+                }`}>
+                  {msg.error ? (
+                    <div className="bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-xl p-3 text-red-900 dark:text-red-200 text-xs flex flex-col gap-3">
+                      <div className="flex items-center gap-2 font-bold">
+                        <AlertTriangle size={16} className="text-red-500 shrink-0" />
+                        <span>Generation Error</span>
                       </div>
-                    )}
-
-                    {msg.type === "video" && msg.mediaUrl && (
-                      <MediaPlayer url={msg.mediaUrl} />
-                    )}
-
-                    <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-3 sm:mt-3.5 pt-2 sm:pt-2.5 border-t border-gray-100 dark:border-gray-800/60 text-[10px] text-gray-500 dark:text-gray-400 font-medium">
-                      {msg.model && <span className="flex items-center gap-1 font-mono"><Bot size={10} />{msg.model}</span>}
-                      {msg.cost !== undefined && <span className="font-mono text-blue-600 dark:text-blue-400 hidden sm:inline">Cost: ${msg.cost.toFixed(6)}</span>}
-                      {msg.mediaUrl && <DownloadButton url={msg.mediaUrl} filename={`media_${msg.timestamp}.${msg.type === "image" ? "png" : "mp4"}`} />}
-                      
-                      {/* Export Options */}
-                      <div className="flex items-center gap-1 bg-gray-50 dark:bg-gray-800/40 px-2 py-1 rounded-lg border border-gray-200/60 dark:border-gray-700/60 shadow-xs">
-                        <span className="font-bold text-[9px] uppercase tracking-wider text-gray-400 font-mono mr-1">Export:</span>
-                        <button onClick={() => handleExport(msg, "pdf")} className="hover:text-blue-600 dark:hover:text-blue-400 font-bold px-1 py-0.5 rounded transition cursor-pointer" title="Export as PDF">PDF</button>
-                        <button onClick={() => handleExport(msg, "md")} className="hover:text-blue-600 dark:hover:text-blue-400 font-bold px-1 py-0.5 rounded transition cursor-pointer" title="Export as Markdown">MD</button>
-                        <button onClick={() => handleExport(msg, "txt")} className="hover:text-blue-600 dark:hover:text-blue-400 font-bold px-1 py-0.5 rounded transition cursor-pointer" title="Export as Plain Text">TXT</button>
-                        <button onClick={() => handleExport(msg, "html")} className="hover:text-blue-600 dark:hover:text-blue-400 font-bold px-1 py-0.5 rounded transition cursor-pointer" title="Export as HTML">HTML</button>
-                      </div>
-
+                      <p className="font-mono bg-red-100/50 dark:bg-red-900/50 p-2 rounded-lg text-[11px] leading-relaxed break-words">{msg.error}</p>
                       <button
-                        onClick={() => handleCopy(msg.id, msg.content)}
-                        className="flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-200 transition ml-auto p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800 font-mono text-xs font-bold bg-gray-50 dark:bg-gray-800/50 border border-gray-200/60 dark:border-gray-700/60 shadow-xs active:scale-95 cursor-pointer"
+                        onClick={() => handleRetry(msg)}
+                        className="flex items-center justify-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition text-xs w-fit active:scale-95 cursor-pointer"
                       >
-                        {copiedId === msg.id ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
-                        <span>{copiedId === msg.id ? "Copied" : "Copy"}</span>
+                        <RefreshCw size={12} />
+                        <span>Retry</span>
                       </button>
                     </div>
-                  </>
+                  ) : (
+                    <>
+                      <MarkdownContent content={msg.content} onOpenArtifact={(art) => setActiveArtifact(art)} />
+                      {msg.type === "image" && msg.mediaUrl && (
+                        <div className="mt-3 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800 shadow-lg">
+                          <img src={msg.mediaUrl} alt="Generated" className="w-full h-auto object-cover max-h-[28rem]" />
+                        </div>
+                      )}
+                      {msg.type === "video" && msg.mediaUrl && (
+                        <MediaPlayer url={msg.mediaUrl} />
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Hover Action Toolbar — only visible on group hover */}
+                {!msg.error && (
+                  <div className={`flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 ${
+                    msg.role === "user" ? "flex-row-reverse" : "flex-row"
+                  }`}>
+                    {/* Copy */}
+                    <button
+                      onClick={() => handleCopy(msg.id, msg.content)}
+                      title="Copy message"
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer"
+                    >
+                      {copiedId === msg.id ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
+                      <span>{copiedId === msg.id ? "Copied" : "Copy"}</span>
+                    </button>
+
+                    {/* Export dropdown buttons */}
+                    <div className="flex items-center gap-0.5 border-l border-gray-200 dark:border-gray-700 ml-1 pl-1">
+                      <button onClick={() => handleExport(msg, "pdf")} title="Export PDF" className="px-2 py-1 rounded-lg text-[11px] font-medium text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer">PDF</button>
+                      <button onClick={() => handleExport(msg, "md")} title="Export Markdown" className="px-2 py-1 rounded-lg text-[11px] font-medium text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer">MD</button>
+                      <button onClick={() => handleExport(msg, "txt")} title="Export TXT" className="px-2 py-1 rounded-lg text-[11px] font-medium text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer">TXT</button>
+                      <button onClick={() => handleExport(msg, "html")} title="Export HTML" className="px-2 py-1 rounded-lg text-[11px] font-medium text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer">HTML</button>
+                    </div>
+
+                    {/* Model + Cost metadata */}
+                    {msg.role === "assistant" && (
+                      <div className="flex items-center gap-2 border-l border-gray-200 dark:border-gray-700 ml-1 pl-2 text-[10px] text-gray-400 font-mono">
+                        {msg.model && <span>{msg.model}</span>}
+                        {msg.cost !== undefined && msg.cost > 0 && <span className="text-blue-500">${msg.cost.toFixed(6)}</span>}
+                        {msg.mediaUrl && <DownloadButton url={msg.mediaUrl} filename={`media_${msg.timestamp}.${msg.type === "image" ? "png" : "mp4"}`} />}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
